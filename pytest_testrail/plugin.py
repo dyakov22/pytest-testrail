@@ -3,6 +3,7 @@ from datetime import datetime
 from operator import itemgetter
 
 import pytest
+import os
 import re
 import warnings
 
@@ -26,6 +27,7 @@ DT_FORMAT = '%d-%m-%Y %H:%M:%S'
 TESTRAIL_PREFIX = 'testrail'
 TESTRAIL_DEFECTS_PREFIX = 'testrail_defects'
 ADD_RESULTS_URL = 'add_results_for_cases/{}'
+ADD_ATTACH_TO_RESULT_URL = 'add_attachment_to_result/{}'
 ADD_TESTRUN_URL = 'add_run/{}'
 CLOSE_TESTRUN_URL = 'close_run/{}'
 CLOSE_TESTPLAN_URL = 'close_plan/{}'
@@ -81,7 +83,7 @@ def testrail(*ids):
     :return pytest.mark:
     """
     deprecation_msg = ('pytest_testrail: the @testrail decorator is deprecated and will be removed. Please use the '
-                       '@pytestrail.case decorator instead.')
+            '@pytestrail.case decorator instead.')
     warnings.warn(deprecation_msg, DeprecatedTestDecorator)
     return pytestrail.case(*ids)
 
@@ -119,7 +121,7 @@ def clean_test_defects(defect_ids):
         :param list defect_ids: list of defect_ids.
         :return list ints: contains list of defect_ids as ints.
         """
-    return [(re.search('(?P<defect_id>.*)', defect_id).groupdict().get('defect_id')) for defect_id in defect_ids]
+    return [(re.search('(?P<defect_id>.*)',defect_id).groupdict().get('defect_id')) for defect_id in defect_ids]
 
 
 def get_testrail_keys(items):
@@ -138,10 +140,22 @@ def get_testrail_keys(items):
     return testcaseids
 
 
+def get_screenshot_uri(res):
+    try:
+        path = res['comment'].split('file://')[1].split('.png')[0] + '.png'
+    except:
+        pass
+    if os.path.exists(path):
+        return path
+    else:
+        raise FileExistsError
+
+
+
 class PyTestRailPlugin(object):
-    def __init__(self, client, assign_user_id, project_id, suite_id, include_all, cert_check, tr_name,
-                 tr_description='', run_id=0, plan_id=0, version='', close_on_complete=False,
-                 publish_blocked=True, skip_missing=False, milestone_id=None, custom_comment=None):
+    def __init__(self, client, assign_user_id, project_id, suite_id, include_all, cert_check, tr_name, tr_description='', run_id=0,
+                 plan_id=0, version='', close_on_complete=False, publish_blocked=True, skip_missing=False,
+                 milestone_id=None, custom_comment=None):
         self.assign_user_id = assign_user_id
         self.cert_check = cert_check
         self.client = client
@@ -221,14 +235,14 @@ class PyTestRailPlugin(object):
         if item.get_closest_marker(TESTRAIL_PREFIX):
             testcaseids = item.get_closest_marker(TESTRAIL_PREFIX).kwargs.get('ids')
             if rep.when == 'call' and testcaseids:
-                if defectids:
+                if defectids != None:
                     self.add_result(
                         clean_test_ids(testcaseids),
                         get_test_outcome(outcome.get_result().outcome),
                         comment=comment,
                         duration=rep.duration,
                         defects=str(clean_test_defects(defectids)).replace('[', '').replace(']', '').replace("'", ''),
-                        test_parametrize=test_parametrize
+                        test_parametrize = test_parametrize
                     )
                 else:
                     self.add_result(
@@ -277,13 +291,13 @@ class PyTestRailPlugin(object):
         """
         for test_id in test_ids:
             data = {
-                'case_id': test_id,
-                'status_id': status,
-                'comment': comment,
-                'duration': duration,
-                'defects': defects,
-                'test_parametrize': test_parametrize
-            }
+                    'case_id': test_id,
+                    'status_id': status,
+                    'comment': comment,
+                    'duration': duration,
+                    'defects': defects,
+                    'test_parametrize': test_parametrize
+                }
             self.results.append(data)
 
     def add_results(self, testrun_id):
@@ -300,8 +314,7 @@ class PyTestRailPlugin(object):
             converter = lambda s, c: str(bytes(s, "utf-8"), c)
         # Results are sorted by 'case_id' and by 'status_id' (worst result at the end)
 
-        # Comment sort by status_id due to issue with pytest-rerun failures,
-        # for details refer to issue https://github.com/allankp/pytest-testrail/issues/100
+        # Comment sort by status_id due to issue with pytest-rerun failures, for details refer to issue https://github.com/allankp/pytest-testrail/issues/100
         # self.results.sort(key=itemgetter('status_id'))
         self.results.sort(key=itemgetter('case_id'))
 
@@ -338,12 +351,12 @@ class PyTestRailPlugin(object):
                     # Indent text to avoid string formatting by TestRail. Limit size of comment.
                     entry['comment'] += u"# Pytest result: #\n"
                     entry['comment'] += u'Log truncated\n...\n' if len(str(comment)) > COMMENT_SIZE_LIMIT else u''
-                    entry['comment'] += u"    " + converter(str(comment), "utf-8")[-COMMENT_SIZE_LIMIT:].replace('\n', '\n    ') # noqa
+                    entry['comment'] += u"    " + converter(str(comment), "utf-8")[-COMMENT_SIZE_LIMIT:].replace('\n', '\n    ')
                 else:
                     # Indent text to avoid string formatting by TestRail. Limit size of comment.
                     entry['comment'] += u"# Pytest result: #\n"
                     entry['comment'] += u'Log truncated\n...\n' if len(str(comment)) > COMMENT_SIZE_LIMIT else u''
-                    entry['comment'] += u"    " + converter(str(comment), "utf-8")[-COMMENT_SIZE_LIMIT:].replace('\n', '\n    ') # noqa
+                    entry['comment'] += u"    " + converter(str(comment), "utf-8")[-COMMENT_SIZE_LIMIT:].replace('\n', '\n    ')
             elif comment == '':
                 entry['comment'] = self.custom_comment
             duration = result.get('duration')
@@ -357,12 +370,23 @@ class PyTestRailPlugin(object):
             data,
             cert_check=self.cert_check
         )
+
         error = self.client.get_error(response)
         if error:
             print('[{}] Info: Testcases not published for following reason: "{}"'.format(TESTRAIL_PREFIX, error))
+        attach_res = None
+        for item in response:
+            try:
+                if item['status_id'] == 1:
+                    continue
+                path = get_screenshot_uri(item)
+                res_id = item['id']
+                attach_res = self.client.send_attach_to_result(id=res_id, file_url=path)
+            except:
+                print(f'Screenshot did not add to run due to {attach_res}')
 
-    def create_test_run(self, assign_user_id, project_id, suite_id, include_all,
-                        testrun_name, tr_keys, milestone_id, description=''):
+    def create_test_run(
+            self, assign_user_id, project_id, suite_id, include_all, testrun_name, tr_keys, milestone_id, description=''):
         """
         Create testrun with ids collected from markers.
 

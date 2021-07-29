@@ -14,6 +14,7 @@
 import sys
 import requests
 import time
+from testrail_api import TestRailAPI
 
 if sys.version_info.major == 2:
     from urlparse import urljoin
@@ -22,6 +23,7 @@ else:
 
 
 class APIClient:
+
     def __init__(self, base_url, user, password, **kwargs):
         '''
         Instantiate the APIClient class.
@@ -125,6 +127,10 @@ class APIClient:
             return self.send_post(uri, data, **kwargs)
         else:
             return r.json()
+
+    def send_attach_to_result(self, res_id, file_url):
+        additional_lib = TestRailAPI(self._url.split('index')[0], self.user, self.password)
+        return additional_lib.attachments.add_attachment_to_result(res_id, file_url)
 
     @staticmethod
     def get_error(json_response):

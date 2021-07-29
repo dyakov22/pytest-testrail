@@ -381,7 +381,7 @@ class PyTestRailPlugin(object):
                     continue
                 path = get_screenshot_uri(item)
                 res_id = item['id']
-                attach_res = self.client.send_attach_to_result(id=res_id, file_url=path)
+                attach_res = self.client.send_attach_to_result(res_id=res_id, file_url=path)
             except:
                 print(f'Screenshot did not add to run due to {attach_res}')
 
